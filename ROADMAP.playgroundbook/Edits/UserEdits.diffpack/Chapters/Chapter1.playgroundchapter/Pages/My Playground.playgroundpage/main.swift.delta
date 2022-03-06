@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Diff</key>
+	<array>
+		<dict>
+			<key>ModifiedContent</key>
+			<string>// # Initialization
+struct RocketConfiguration {
+    let name: String = "Athena 9 Heavy"
+    let numberOfFirstStageCores: Int = 3
+    let numberOfSecondStageCores:Int = 1
+    let numberOfStageReuseLandingLegs:Int? = nil
+}
+
+// 構造体はメンバーごとのinitializerを自動生成してくれる
+struct RocketStageConfiguration {
+    let propellantMass: Double
+    let liquidOxygenMass: Double
+    let nominalBurnTime:Int
+} 
+extension RocketStageConfiguration {
+    init(propellantMass: Double, liquidOxygenMass:Double) {
+        self.propellantMass = propellantMass
+        self.liquidOxygenMass = liquidOxygenMass
+        self.nominalBurnTime = 180
+    }
+}
+
+let athena9Heavy = RocketConfiguration() // default initializer
+let stageOneConfiguration = RocketStageConfiguration(propellantMass: 119.1, liquidOxygenMass: 276.0,nominalBurnTime: 180) // extensionすれば全項目イニシャライザも使える
+
+// ## カスタムイニシャライザ
+struct Weather {
+    let temperatureCelsius: Double
+    let windSpeedKilometersPerHour: Double
+    
+    init(tempertureFahrenheit: Double = 72, windSpeedMilesPerHour: Double = 5) {
+        self.temperatureCelsius = (tempertureFahrenheit - 32) / 1.8
+        self.windSpeedKilometersPerHour = windSpeedMilesPerHour * 1.609344
+    }
+}
+
+let currentWeather = Weather(tempertureFahrenheit: 87, windSpeedMilesPerHour: 2)
+currentWeather.temperatureCelsius
+currentWeather.windSpeedKilometersPerHour
+
+// ## 重複を避けるためにイニシャライザを委譲する
+struct GuidanceSensorStatus {
+    var currentZAngularVelocityRadiansPerMinute: Double
+    var initialZAngularVelocityRadiansPerMinute: Double
+    var needsCorrection: Bool
+    
+    init(zAngularVelocityDegreesPerMinute: Double, needsCorrection: Bool = false) {
+        let radiansPerMinute = zAngularVelocityDegreesPerMinute * 0.01745329251994
+        self.currentZAngularVelocityRadiansPerMinute = radiansPerMinute
+        self.initialZAngularVelocityRadiansPerMinute = radiansPerMinute
+        self.needsCorrection = needsCorrection
+    }
+    // delegationg initializer(委譲イニシャライザ)
+    init(zAngularVelocityDegreesPerMinute: Double, needsCorrection: Int) {
+        self.init(zAngularVelocityDegreesPerMinute: zAngularVelocityDegreesPerMinute, needsCorrection: (needsCorrection &gt; 0))
+    }
+}
+let guidanceStatus = GuidanceSensorStatus(zAngularVelocityDegreesPerMinute: 2.2)
+guidanceStatus.currentZAngularVelocityRadiansPerMinute
+guidanceStatus.needsCorrection
+// ## 2フェーズのInitializationの動きを観察する
+struct CombustionChamberStatus {
+    var tempertureKelvin: Double
+    var pressureKiloPascals: Double
+    
+    init(temperatureKelvin: Double, pressureKiloPascals: Double) {
+        print("Phase 1 init")
+        self.tempertureKelvin = temperatureKelvin
+        self.pressureKiloPascals = pressureKiloPascals
+        print("CombustionChamberStatus fully initilized")
+        print("Phase 2 init")
+    }
+    
+    init(temperatureCelsius: Double, pressureAtmospheric: Double) {
+        print("Phase 1 delegating init")
+        // デリゲートイニシャライザの間はselfが使用できない
+        let temperatureKelvin = temperatureCelsius + 273.15
+        let pressureKiloPascals = pressureAtmospheric * 101.325
+        self.init(temperatureKelvin: temperatureKelvin, pressureKiloPascals: pressureKiloPascals)
+        print("Phase 2 delegating init")
+    }
+}
+
+CombustionChamberStatus(temperatureCelsius: 32, pressureAtmospheric: 0.96)
+
+    // ## 失敗可能なイニシャライザ
+    // 通常のイニシャライザと異なる点は2つ
+    // ・オプショナルな値を返すこと
+    // ・nilを返して初期化の失敗を表現できること
+struct TankStatus {
+    var currentVolume: Double
+    var currentLiquidType: String?
+    
+    // failable initializer
+    init?(currentVolume: Double, currentLiquidType: String?) {
+        // 構造体のfailableイニシャライザ内では、いつでもnilを返すことが可能
+        if currentVolume &lt; 0 {
+            return nil
+        }
+        if currentVolume &gt; 0 &amp;&amp; currentLiquidType == nil {
+            return nil
+        }
+        self.currentVolume = currentVolume
+        self.currentLiquidType = currentLiquidType
+    }
+}
+if let tankStatus = TankStatus(currentVolume: -10.0, currentLiquidType: nil) {
+    print("Nice, tank status created.")
+} else {
+    print("Oh no, an initialization failure occurred.")
+}
+
+// ## イニシャライザからThrowsを投げる
+enum InvalidAstronautDataError: Error {
+    case EmptyName
+    case InvalidAge
+}
+
+struct Astronaut {
+    let name: String
+    let age: Int
+    
+    init(name: String, age: Int) throws {
+        if name.isEmpty {
+            throw InvalidAstronautDataError.EmptyName
+        }
+        if age &lt; 18 || age &gt; 70 {
+            throw InvalidAstronautDataError.InvalidAge
+        }
+        self.name = name
+        self.age = age
+    }
+}
+
+let johnny = try? Astronaut(name: "Johnny Cosmoseed", age: 17)
+
+// ## throwing initializersとfailable initializersのどちらを使うべき？
+// throwing initializers
+// 理由｜Failable initializersは失敗と成功の2値しか表現できない。
+// throwing inilializersは失敗の表現だけでなく、特定のエラーに関する理由を表現することが出来るから。
+// さらに、呼び出し側のコードがinitializerがなげるエラーを伝搬出来るから。
+// エラー型を定義する必要がなく、余計な try? キーワードを使わなくて済む。
+// なぜSwiftにはfailable initializersがあるのでしょうか？それは最初のバージョンのSwiftにはthrowing関数が存在しなかったからです。
+// 従って、言語は初期化の失敗を管理する方法を必要としていた。
+</string>
+			<key>ModifiedRange</key>
+			<string>{0, 4973}</string>
+			<key>OriginalContent</key>
+			<string>
+</string>
+			<key>OriginalRange</key>
+			<string>{0, 1}</string>
+		</dict>
+	</array>
+	<key>File</key>
+	<string>Chapters/Chapter1.playgroundchapter/Pages/My Playground.playgroundpage/main.swift</string>
+</dict>
+</plist>
